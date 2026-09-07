@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pixel Color Picker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      font-family: system-ui, sans-serif;
+      transition: background-color 0.05s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px;
+      background-color: #1a1a2e;
+      color: #f0f0f0;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    p.subtitle {
+      font-size: 0.9rem;
+      opacity: 0.6;
+      margin-bottom: 28px;
+    }
+
+    #upload-area {
+      border: 2px dashed rgba(255,255,255,0.25);
+      border-radius: 12px;
+      padding: 32px 48px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      margin-bottom: 28px;
+      width: 100%;
+      max-width: 480px;
+    }
+
+    #upload-area:hover, #upload-area.drag-over {
+      border-color: rgba(255,255,255,0.6);
+      background: rgba(255,255,255,0.05);
+    }
+
+    #upload-area input { display: none; }
+
+    #upload-area .icon { font-size: 2rem; margin-bottom: 8px; }
+
+    #upload-area span {
+      display: block;
+      font-size: 0.9rem;
+      opacity: 0.7;
+    }
+
+    #canvas-wrapper {
+      position: relative;
+      display: none;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+      cursor: crosshair;
+      max-width: 90vw;
+    }
+
+    canvas { display: block; max-width: 100%; }
+
+    /* Magnifier bubble */
+    #magnifier {
+      position: fixed;
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.8);
+      pointer-events: none;
+      display: none;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      z-index: 1000;
+    }
+
+    #magnifier canvas { position: absolute; top: 0; left: 0; }
+
+    /* Color tooltip */
+    #color-tooltip {
+      position: fixed;
+      pointer-events: none;
+      display: none;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(8px);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.78rem;
+      white-space: nowrap;
+      z-index: 1001;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    #color-tooltip .swatch {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.3);
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    /* Bottom info bar */
+    #info-bar {
+      display: none;
+      margin-top: 20px;
+      align-items: center;
+      gap: 16px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-size: 0.85rem;
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.08);
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    #info-bar .color-block {
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      border: 2px solid rgba(255,255,255,0.25);
+      transition: background-color 0.15s;
+      flex-shrink: 0;
+    }
+
+    #info-bar .values { display: flex; flex-direction: column; gap: 2px; }
+
+    #info-bar .values span { opacity: 0.85; font-family: monospace; }
+
+    .click-hint {
+      opacity: 0.5;
+      font-size: 0.8rem;
+    }
+
+    /* Clear button */
+    #clear-btn {
+      display: none;
+      margin-top: 16px;
+      padding: 8px 20px;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.07);
+      color: #f0f0f0;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    #clear-btn:hover {
+      background: rgba(255,80,80,0.2);
+      border-color: rgba(255,100,100,0.5);
+    }
+
+    /* Applied color badge */
+    #applied-badge {
+      display: none;
+      margin-top: 12px;
+      background: rgba(0,0,0,0.35);
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-size: 0.8rem;
+      opacity: 0.8;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    #applied-badge .swatch {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.4);
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Pixel Color Picker</h1>
+  <p class="subtitle">Upload an image, hover to inspect pixels, click to apply the color as background.</p>
+
+  <div id="upload-area">
+    <div class="icon">🖼️</div>
+    <span>Click or drag &amp; drop an image here</span>
+    <span style="margin-top:4px; font-size:0.78rem;">PNG, JPG, WebP, GIF supported</span>
+    <input type="file" id="file-input" accept="image/*" />
+  </div>
+
+  <div id="canvas-wrapper">
+    <canvas id="main-canvas"></canvas>
+  </div>
+
+  <div id="info-bar">
+    <div class="color-block" id="hover-swatch"></div>
+    <div class="values">
+      <span id="hex-value">#------</span>
+      <span id="rgb-value">rgb(-, -, -)</span>
+      <span id="hsl-value">hsl(-, -, -)</span>
+    </div>
+    <span class="click-hint">Click any pixel to set background</span>
+  </div>
+
+  <button id="clear-btn">&#x2715; Clear &amp; upload new image</button>
+
+  <div id="applied-badge">
+    <span class="swatch" id="applied-swatch"></span>
+    <span id="applied-text">Background: —</span>
+  </div>
+
+  <!-- Magnifier overlay -->
+  <div id="magnifier">
+    <canvas id="mag-canvas" width="120" height="120"></canvas>
+  </div>
+
+  <!-- Floating tooltip -->
+  <div id="color-tooltip">
+    <span class="swatch" id="tooltip-swatch"></span>
+    <span id="tooltip-hex">#------</span>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('file-input');
+    const uploadArea = document.getElementById('upload-area');
+    const canvasWrapper = document.getElementById('canvas-wrapper');
+    const mainCanvas = document.getElementById('main-canvas');
+    const ctx = mainCanvas.getContext('2d', { willReadFrequently: true });
+
+    const magnifier = document.getElementById('magnifier');
+    const magCanvas = document.getElementById('mag-canvas');
+    const magCtx = magCanvas.getContext('2d');
+
+    const tooltip = document.getElementById('color-tooltip');
+    const tooltipSwatch = document.getElementById('tooltip-swatch');
+    const tooltipHex = document.getElementById('tooltip-hex');
+
+    const infoBar = document.getElementById('info-bar');
+    const hoverSwatch = document.getElementById('hover-swatch');
+    const hexValue = document.getElementById('hex-value');
+    const rgbValue = document.getElementById('rgb-value');
+    const hslValue = document.getElementById('hsl-value');
+
+    const appliedBadge = document.getElementById('applied-badge');
+    const appliedSwatch = document.getElementById('applied-swatch');
+    const appliedText = document.getElementById('applied-text');
+    const clearBtn = document.getElementById('clear-btn');
+
+    let img = null;
+    let pinnedColor = '#1a1a2e';
+    const ZOOM = 8;
+    const MAG_SIZE = 120;
+
+    // --- Upload handling ---
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', e => {
+      if (e.target.files[0]) loadImage(e.target.files[0]);
+    });
+
+    uploadArea.addEventListener('dragover', e => {
+      e.preventDefault();
+      uploadArea.classList.add('drag-over');
+    });
+
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+
+    uploadArea.addEventListener('drop', e => {
+      e.preventDefault();
+      uploadArea.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) loadImage(file);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      img = null;
+      ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+      canvasWrapper.style.display = 'none';
+      infoBar.style.display = 'none';
+      clearBtn.style.display = 'none';
+      appliedBadge.style.display = 'none';
+      pinnedColor = '#1a1a2e';
+      document.body.style.backgroundColor = pinnedColor;
+      fileInput.value = '';
+      uploadArea.style.display = 'block';
+      tooltip.style.display = 'none';
+      magnifier.style.display = 'none';
+    });
+
+    function loadImage(file) {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        img = new Image();
+        img.onload = () => {
+          // Scale down large images to fit viewport while preserving ratio
+          const maxW = Math.min(window.innerWidth * 0.88, 900);
+          const maxH = window.innerHeight * 0.55;
+          let w = img.naturalWidth;
+          let h = img.naturalHeight;
+          if (w > maxW) { h = h * maxW / w; w = maxW; }
+          if (h > maxH) { w = w * maxH / h; h = maxH; }
+          mainCanvas.width = Math.round(w);
+          mainCanvas.height = Math.round(h);
+          ctx.drawImage(img, 0, 0, mainCanvas.width, mainCanvas.height);
+          canvasWrapper.style.display = 'block';
+          infoBar.style.display = 'flex';
+          clearBtn.style.display = 'inline-block';
+          uploadArea.style.display = 'none';
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // --- Color utilities ---
+
+    function rgbToHex(r, g, b) {
+      return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+    }
+
+    function rgbToHsl(r, g, b) {
+      r /= 255; g /= 255; b /= 255;
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      let h, s, l = (max + min) / 2;
+      if (max === min) {
+        h = s = 0;
+      } else {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+          case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+          case g: h = ((b - r) / d + 2) / 6; break;
+          case b: h = ((r - g) / d + 4) / 6; break;
+        }
+      }
+      return `hsl(${Math.round(h * 360)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%)`;
+    }
+
+    function getPixel(x, y) {
+      const data = ctx.getImageData(x, y, 1, 1).data;
+      return { r: data[0], g: data[1], b: data[2], a: data[3] };
+    }
+
+    // --- Hover: magnifier + tooltip + info bar ---
+
+    mainCanvas.addEventListener('mousemove', e => {
+      const rect = mainCanvas.getBoundingClientRect();
+      const scaleX = mainCanvas.width / rect.width;
+      const scaleY = mainCanvas.height / rect.height;
+      const px = Math.floor((e.clientX - rect.left) * scaleX);
+      const py = Math.floor((e.clientY - rect.top) * scaleY);
+
+      if (px < 0 || py < 0 || px >= mainCanvas.width || py >= mainCanvas.height) return;
+
+      const { r, g, b } = getPixel(px, py);
+      const hex = rgbToHex(r, g, b);
+      const hsl = rgbToHsl(r, g, b);
+
+      // Update info bar
+      hoverSwatch.style.backgroundColor = hex;
+      hexValue.textContent = hex.toUpperCase();
+      rgbValue.textContent = `rgb(${r}, ${g}, ${b})`;
+      hslValue.textContent = hsl;
+
+      // Update background live
+      document.body.style.backgroundColor = hex;
+
+      // Update tooltip
+      tooltipSwatch.style.backgroundColor = hex;
+      tooltipHex.textContent = hex.toUpperCase();
+      positionTooltip(e.clientX, e.clientY);
+      tooltip.style.display = 'block';
+
+      // Draw magnifier
+      drawMagnifier(px, py, e.clientX, e.clientY);
+    });
+
+    mainCanvas.addEventListener('mouseleave', () => {
+      tooltip.style.display = 'none';
+      magnifier.style.display = 'none';
+      document.body.style.backgroundColor = pinnedColor;
+    });
+
+    function positionTooltip(cx, cy) {
+      const offset = 14;
+      let left = cx + offset;
+      let top = cy + offset;
+      if (left + 160 > window.innerWidth) left = cx - 160;
+      if (top + 60 > window.innerHeight) top = cy - 60;
+      tooltip.style.left = left + 'px';
+      tooltip.style.top = top + 'px';
+    }
+
+    function drawMagnifier(px, py, cx, cy) {
+      const half = MAG_SIZE / 2;
+      // Source region (ZOOM px = 1 magnifier px)
+      const srcHalf = Math.round(half / ZOOM);
+      const srcX = Math.max(0, px - srcHalf);
+      const srcY = Math.max(0, py - srcHalf);
+      const srcW = srcHalf * 2;
+      const srcH = srcHalf * 2;
+
+      magCtx.clearRect(0, 0, MAG_SIZE, MAG_SIZE);
+      magCtx.imageSmoothingEnabled = false;
+      magCtx.drawImage(mainCanvas,
+        srcX, srcY, srcW, srcH,
+        0, 0, MAG_SIZE, MAG_SIZE
+      );
+
+      // Draw crosshair at center
+      magCtx.strokeStyle = 'rgba(255,255,255,0.9)';
+      magCtx.lineWidth = 1;
+      magCtx.beginPath();
+      magCtx.moveTo(half, half - 6); magCtx.lineTo(half, half + 6);
+      magCtx.moveTo(half - 6, half); magCtx.lineTo(half + 6, half);
+      magCtx.stroke();
+
+      // Position magnifier above-right of cursor
+      const offset = 20;
+      let left = cx + offset;
+      let top = cy - MAG_SIZE - offset;
+      if (left + MAG_SIZE > window.innerWidth) left = cx - MAG_SIZE - offset;
+      if (top < 0) top = cy + offset;
+
+      magnifier.style.left = left + 'px';
+      magnifier.style.top = top + 'px';
+      magnifier.style.display = 'block';
+    }
+
+    // --- Click: apply background ---
+
+    mainCanvas.addEventListener('click', e => {
+      const rect = mainCanvas.getBoundingClientRect();
+      const scaleX = mainCanvas.width / rect.width;
+      const scaleY = mainCanvas.height / rect.height;
+      const px = Math.floor((e.clientX - rect.left) * scaleX);
+      const py = Math.floor((e.clientY - rect.top) * scaleY);
+
+      if (px < 0 || py < 0 || px >= mainCanvas.width || py >= mainCanvas.height) return;
+
+      const { r, g, b } = getPixel(px, py);
+      const hex = rgbToHex(r, g, b);
+
+      pinnedColor = hex;
+      appliedSwatch.style.backgroundColor = hex;
+      appliedText.textContent = `Pinned: ${hex.toUpperCase()}  —  rgb(${r}, ${g}, ${b})`;
+      appliedBadge.style.display = 'block';
+    });
+  </script>
+</body>
+</html>
